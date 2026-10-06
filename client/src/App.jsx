@@ -36,28 +36,32 @@ function App() {
   }, []);
 
   // Add a new todo to the top of the list
-  async function handleAdd(title) {
-    try {
-      setError("");
-      const newTodo = await createTodo(title);
-      setTodos((prev) => [newTodo, ...prev]);
-    } catch (err) {
-      showError(err);
-    }
+async function handleAdd(title) {
+  try {
+    setError("");
+    const newTodo = await createTodo(title);
+    setTodos((prev) => [newTodo, ...prev]);
+  } catch (err) {
+    showError(err);
   }
+}
 
-  // Replace the edited todo with the updated version from the server
+  // Add a new todo to the top of the list
   async function handleUpdate(id, data) {
-    try {
-      setError("");
-      const updated = await updateTodo(id, data);
-      // TODO: Complete this. Update the `todos` state so the edited todo is
-      // replaced with `updated` (keep every other todo as it is).
-    } catch (err) {
-      showError(err);
-    }
-  }
+  try {
+    setError("");
+    const updated = await updateTodo(id, data);
 
+    setTodos((prev) =>
+      prev.map((todo) =>
+        todo._id === id ? updated : todo
+      )
+    );
+  } catch (err) {
+    showError(err);
+  }
+}
+  // Replace the edited todo with the updated version from the server
   // Remove one todo
   async function handleDelete(id) {
     try {
