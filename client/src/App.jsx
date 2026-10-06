@@ -1,6 +1,12 @@
 import { useEffect, useState } from "react";
-import { getTodos, createTodo, updateTodo, deleteTodo } from "./api";
-import { FILTERS } from "./filters";
+import {
+  getTodos,
+  createTodo,
+  updateTodo,
+  deleteTodo,
+} from "./api";
+
+import { FILTERS } from "./constants";
 import Sidebar from "./components/Sidebar";
 import TodoForm from "./components/TodoForm";
 import TodoItem from "./components/TodoItem";
@@ -8,29 +14,30 @@ import Pagination from "./components/Pagination";
 
 function App() {
   const [todos, setTodos] = useState([]);
-  const [filter, setFilter] = useState("all");
+  const [filter, setFilter] = useState(FILTERS.ALL);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(5);
 
-  // Shows an error in the banner (and logs it in the console)
+  // Pagination
+  const [currentPage, setCurrentPage] = useState(1);
+  const tasksPerPage = 10;
+
   function showError(err) {
-    console.error(err);
-    setError(err.message);
+    setError(err.message || "Something went wrong");
   }
 
-  // Load all todos once when the page opens
+  // Load todos
   useEffect(() => {
     async function loadTodos() {
       try {
+        setLoading(true);
         setError("");
+
         const data = await getTodos();
         setTodos(data);
       } catch (err) {
         showError(err);
       } finally {
-        // Stop loading whether it worked or failed
         setLoading(false);
       }
     }
@@ -38,149 +45,197 @@ function App() {
     loadTodos();
   }, []);
 
-  // Add a new todo to the top of the list
+  // Add todo
   async function handleAdd(title) {
     try {
       setError("");
+
       const newTodo = await createTodo(title);
+
       setTodos((prev) => [newTodo, ...prev]);
+
+      // Go back to first page when adding a new task
+      setCurrentPage(1);
     } catch (err) {
       showError(err);
     }
   }
 
-  // Replace the edited todo with the updated version from the server
+  // Update todo
   async function handleUpdate(id, data) {
     try {
       setError("");
+
       const updated = await updateTodo(id, data);
-      setTodos((prev) => prev.map((todo) => (todo._id === id ? updated : todo)));
+
+      setTodos((prev) =>
+        prev.map((todo) =>
+          todo._id === id ? updated : todo
+        )
+      );
     } catch (err) {
       showError(err);
     }
   }
 
-  // Remove one todo
+  // Delete todo
   async function handleDelete(id) {
     try {
       setError("");
+
       await deleteTodo(id);
-      setTodos((prev) => prev.filter((todo) => todo._id !== id));
+
+      setTodos((prev) =>
+        prev.filter((todo) => todo._id !== id)
+      );
     } catch (err) {
       showError(err);
     }
   }
 
-  // Remove every completed todo
+  // Clear completed todos
   async function handleClearDone() {
     try {
       setError("");
-      const doneTodos = todos.filter((todo) => todo.completed);
 
-      for (const todo of doneTodos) {
-        await deleteTodo(todo._id);
-      }
+      const completedTodos = todos.filter(
+        (todo) => todo.completed
+      );
 
-      setTodos((prev) => prev.filter((todo) => !todo.completed));
+      await Promise.all(
+        completedTodos.map((todo) =>
+          deleteTodo(todo._id)
+        )
+      );
+
+      setTodos((prev) =>
+        prev.filter((todo) => !todo.completed)
+      );
+
+      setCurrentPage(1);
     } catch (err) {
       showError(err);
     }
   }
 
-  // Only the todos that match the selected filter
-  const filteredTodos = todos.filter(FILTERS[filter].test);
-
-  const totalPages = Math.max(1, Math.ceil(filteredTodos.length / pageSize));
-  const currentPage = Math.min(page, totalPages);
-  const startIndex = (currentPage - 1) * pageSize;
-  const pagedTodos = filteredTodos.slice(startIndex, startIndex + pageSize);
-
-  function handleFilter(key) {
-    setFilter(key);
-    setPage(1);
-  }
-
-  function handlePageSize(size) {
-    setPageSize(size);
-    setPage(1);
-  }
-
-  // "1 task" or "3 tasks"
-  const taskWord = filteredTodos.length === 1 ? "task" : "tasks";
-
-  // Decide what to show in the list area
-  function renderTodos() {
-    if (loading) {
-      return <p className="empty">Loading...</p>;
+  // Filter todos
+  const filteredTodos = todos.filter((todo) => {
+    if (filter === FILTERS.ACTIVE) {
+      return !todo.completed;
     }
 
-    if (filteredTodos.length === 0) {
-      let message = "You're all caught up. Add a task above.";
-      if (filter === "done") {
-        message = "Nothing completed yet";
-      }
+    if (filter === FILTERS.COMPLETED) {
+      return todo.completed;
+    }
 
+    return true;
+  });
+
+  // Pagination calculations
+  const totalPages = Math.ceil(
+    filteredTodos.length / tasksPerPage
+  );
+
+  const startIndex =
+    (currentPage - 1) * tasksPerPage;
+
+  const endIndex =
+    startIndex + tasksPerPage;
+
+  const currentTodos = filteredTodos.slice(
+    startIndex,
+    endIndex
+  );
+
+  // If current page becomes invalid after deleting/filtering
+  useEffect(() => {
+    if (
+      totalPages > 0 &&
+      currentPage > totalPages
+    ) {
+      setCurrentPage(totalPages);
+    }
+
+    if (totalPages === 0 && currentPage !== 1) {
+      setCurrentPage(1);
+    }
+  }, [totalPages, currentPage]);
+
+  // Change filter and return to page 1
+  function handleFilterChange(newFilter) {
+    setFilter(newFilter);
+    setCurrentPage(1);
+  }
+
+  const taskWord =
+    filteredTodos.length === 1
+      ? "task"
+      : "tasks";
+
+  function renderTodos() {
+    if (loading) {
       return (
-        <div className="empty">
-          <img src="/logo.png" alt="" />
-          <p>{message}</p>
+        <div className="empty-state">
+          Loading...
         </div>
       );
     }
 
-    return (
-      <ul className="todo-list">
-        {pagedTodos.map((todo) => (
-          <TodoItem
-            key={todo._id}
-            todo={todo}
-            onUpdate={handleUpdate}
-            onDelete={handleDelete}
-          />
-        ))}
-      </ul>
-    );
+    if (currentTodos.length === 0) {
+      return (
+        <div className="empty-state">
+          <p>No {filter.toLowerCase()} tasks</p>
+        </div>
+      );
+    }
+
+    return currentTodos.map((todo) => (
+      <TodoItem
+        key={todo._id}
+        todo={todo}
+        onUpdate={handleUpdate}
+        onDelete={handleDelete}
+      />
+    ));
   }
 
   return (
-    <div className="layout">
+    <div className="app">
       <Sidebar
-        todos={todos}
         filter={filter}
-        onFilter={handleFilter}
+        setFilter={handleFilterChange}
+        todos={todos}
         onClearDone={handleClearDone}
       />
 
-      <main className="panel content">
-        <header className="content-header">
-          <h2>{FILTERS[filter].label}</h2>
-          <span className="content-count">
-            {filteredTodos.length} {taskWord}
-          </span>
-        </header>
+      <main className="main">
+        <div className="header">
+          <div>
+            <h1>My Tasks</h1>
 
-        <TodoForm onAdd={handleAdd} />
+            <p>
+              {filteredTodos.length} {taskWord}
+            </p>
+          </div>
+        </div>
 
         {error && (
-          <div className="error" role="alert">
-            <span>{error}</span>
-            <button onClick={() => setError("")} aria-label="Dismiss">
-              ×
-            </button>
+          <div className="error">
+            {error}
           </div>
         )}
 
-        {renderTodos()}
+        <TodoForm onAdd={handleAdd} />
 
-        {!loading && filteredTodos.length > 0 && (
-          <Pagination
-            page={currentPage}
-            totalPages={totalPages}
-            pageSize={pageSize}
-            onPage={setPage}
-            onPageSize={handlePageSize}
-          />
-        )}
+        <div className="todo-list">
+          {renderTodos()}
+        </div>
+
+        <Pagination
+          currentPage={currentPage}
+          totalPages={totalPages}
+          onPageChange={setCurrentPage}
+        />
       </main>
     </div>
   );
